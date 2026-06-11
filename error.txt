@@ -1,7 +1,0 @@
-~/personal-scripts/music-player 13s
-❯ git branch -M main
-fatal: not a git repository (or any parent up to mount point /)
-Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
-
-~/personal-scripts/music-player
-❯
