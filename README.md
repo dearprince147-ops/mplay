@@ -2,7 +2,7 @@
 
 A minimalist, high-performance terminal music player and file explorer designed specifically for **Termux** and low-resource environments. Built with a sleek **Nerd Font** interface and powered by `mpv`.
 
-![mplay Screenshot Placeholder](https://raw.githubusercontent.com/username/repo/main/screenshot.png)
+![mplay Screenshot](screenshot.png)
 
 ## ✨ Features
 
