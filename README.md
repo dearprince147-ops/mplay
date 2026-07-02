@@ -11,6 +11,7 @@ A minimalist, high-performance terminal music player and file explorer designed 
 - **🎨 Modern TUI:** Sleek blue-themed progress bars and vibrant, adaptive shortcut legends.
 - **⚡ Intuitive Controls:** Optimized for one-handed navigation in Termux using arrow keys.
 - **⏩ Double-Tap Seek:** Tap N/P once to skip tracks. Tap N-N or P-P within half a second to jump forward/back within the current track.
+- **💿 Spinning Disc Indicator:** The play/pause icon in the Now Playing bar spins like a real disc while a track plays, and freezes when paused.
 - **🔊 In-app Volume Control:** Adjust mpv's volume with `+`/`-`, independent of the notification panel.
 - **🎧 Auto-Advance:** Plays through your entire folder or filtered search results automatically.
 - **🛡️ Robust & Stable:** Built with `blessed` to handle terminal quirks and resizing gracefully, and logs errors instead of crashing mid-song.
@@ -66,9 +67,11 @@ mplay ~/storage/shared/Music/
 - **↑ / ↓**: Navigate list
 - **→ / ENTER**: Open Folder / Play Song
 - **←**: Go Back to parent folder
-- **Type anything**: Start searching/filtering
-- **BACKSPACE**: Clear search character / Go Back (if search is empty)
-- **ESC**: Clear full search
+- **Type anything**: Start searching/filtering (works for any letter that isn't a shortcut)
+- **/**: Start a search explicitly — needed if the title starts with n, p, q, s, space, +, or -,
+  since those are also shortcuts. Once you've pressed `/`, every key goes to the search box.
+- **BACKSPACE**: Delete the last search character (does nothing outside search — use ← to go back)
+- **ESC**: Clear search and exit search mode
 
 #### 🎵 Player Mode (Listening)
 - **SPACE**: Toggle Play/Pause

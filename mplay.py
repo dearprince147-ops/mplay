@@ -225,7 +225,7 @@ class Player:
     def finished(self): return self.proc is not None and self.proc.poll() is not None
 
 # ── UI ────────────────────────────────────────────────────────────────────────
-def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory):
+def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory, search_active=False):
     h, w = term.height, term.width
     out = [term.home + term.clear]
     path_obj = Path(directory).expanduser().resolve()
@@ -237,7 +237,10 @@ def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory):
 
     # Search
     search_bar = f" {I_SEARCH} Search: {search_query}"
-    if not search_query: search_bar += term.gray(" (type to search)")
+    if search_active and not search_query:
+        search_bar += term.cyan("▏") + term.gray(" (type now, or / for letters like n/p/q)")
+    elif not search_query:
+        search_bar += term.gray(" (type to search, or press / first)")
     out.append(term.move(2, 2) + term.bold_cyan(vtruncate(search_bar, w-4)))
 
     # Sub-header
@@ -302,6 +305,7 @@ def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory):
             ("S", "Stop", term.red),
             ("↑↓", "Nav", term.yellow),
             ("←", "Back", term.gray),
+            ("/", "Search", term.cyan),
             ("Q", "Quit", term.white)
         ]
     else:
@@ -310,6 +314,7 @@ def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory):
             ("←", "Back", term.gray),
             ("→/ENT", "Open", term.cyan),
             ("↑↓", "Nav", term.yellow),
+            ("/", "Search", term.cyan),
             ("Q", "Quit", term.white)
         ]
 
@@ -344,6 +349,11 @@ def main():
 
     player = Player()
     sel_idx, offset, search_query = 0, 0, ""
+    # search_active tracks whether keystrokes go to the search box or act as commands.
+    # it's set True by pressing "/" or by typing any character that isn't a reserved
+    # command key, and cleared on Escape — this is what lets you search for titles
+    # starting with n/p/q/s/space/+/- without those being swallowed as shortcuts.
+    search_active = False
     # a single N/P tap is *deferred* briefly so we can tell it apart from a double-tap:
     # if a second matching tap lands within the window, we seek instead of skipping.
     pending = {"key": None, "t": 0.0}
@@ -352,10 +362,10 @@ def main():
     SEEK_REWIND   = 10.0      # seconds to jump back on P-P double-tap
 
     def reload_dir(new_dir):
-        nonlocal current_dir, sel_idx, offset, search_query
+        nonlocal current_dir, sel_idx, offset, search_query, search_active
         current_dir = str(new_dir)
         entries = scan(current_dir)
-        sel_idx, offset, search_query = 0, 0, ""
+        sel_idx, offset, search_query, search_active = 0, 0, "", False
         return entries, entries
 
     def fire_pending():
@@ -392,7 +402,7 @@ def main():
                         player.play(files[(curr_f_idx + 1) % len(files)], (curr_f_idx + 1) % len(files))
                     else: player.stop()
 
-                draw_ui(term, filtered_entries, player, sel_idx, search_query, offset, current_dir)
+                draw_ui(term, filtered_entries, player, sel_idx, search_query, offset, current_dir, search_active)
                 key = term.inkey(timeout=0.5)
                 if not key: continue
 
@@ -416,24 +426,22 @@ def main():
                             all_entries, filtered_entries = reload_dir(selected)
                         else:
                             player.play(selected, sel_idx)
-                elif key == " ":
+                elif key == "/" and not search_active:
+                    search_active = True
+                elif key == " " and not search_active:
                     player.toggle_pause()
                 elif key.code == term.KEY_BACKSPACE:
                     if search_query:
                         search_query = search_query[:-1]
                         filtered_entries = [t for t in all_entries if search_query.lower() in t.name.lower()]
-                    else:
-                        parent = Path(current_dir).parent
-                        if parent != Path(current_dir):
-                            all_entries, filtered_entries = reload_dir(parent)
-                    sel_idx = 0; offset = 0
+                        sel_idx = 0; offset = 0
                 elif key.code == term.KEY_ESCAPE:
-                    search_query = ""; filtered_entries = all_entries; sel_idx = 0; offset = 0
-                elif key.lower() == "q" and not search_query:
+                    search_query = ""; search_active = False; filtered_entries = all_entries; sel_idx = 0; offset = 0
+                elif key.lower() == "q" and not search_active:
                     break
-                elif key.lower() == "s" and not search_query:
+                elif key.lower() == "s" and not search_active:
                     player.stop()
-                elif key.lower() == "n" and not search_query:
+                elif key.lower() == "n" and not search_active:
                     now = time.time()
                     if pending["key"] == "p":
                         fire_pending()  # a stale pending P tap resolves before we start a new one
@@ -442,7 +450,7 @@ def main():
                         pending["key"] = None
                     else:
                         pending["key"] = "n"; pending["t"] = now
-                elif key.lower() == "p" and not search_query:
+                elif key.lower() == "p" and not search_active:
                     now = time.time()
                     if pending["key"] == "n":
                         fire_pending()  # a stale pending N tap resolves before we start a new one
@@ -451,12 +459,13 @@ def main():
                         pending["key"] = None
                     else:
                         pending["key"] = "p"; pending["t"] = now
-                elif key in ("+", "=") and not search_query:
+                elif key in ("+", "=") and not search_active:
                     player.volume_up()
-                elif key in ("-", "_") and not search_query:
+                elif key in ("-", "_") and not search_active:
                     player.volume_down()
                 elif not key.is_sequence:
                     search_query += key
+                    search_active = True
                     filtered_entries = [t for t in all_entries if search_query.lower() in t.name.lower()]
                     sel_idx = 0; offset = 0
             except Exception as e:
