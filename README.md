@@ -10,8 +10,10 @@ A minimalist, high-performance terminal music player and file explorer designed 
 - **🔍 Real-time Search:** Instantly filter folders and music files as you type.
 - **🎨 Modern TUI:** Sleek blue-themed progress bars and vibrant, adaptive shortcut legends.
 - **⚡ Intuitive Controls:** Optimized for one-handed navigation in Termux using arrow keys.
+- **⏩ Double-Tap Seek:** Tap N/P once to skip tracks. Tap N-N or P-P within half a second to jump forward/back within the current track.
+- **🔊 In-app Volume Control:** Adjust mpv's volume with `+`/`-`, independent of the notification panel.
 - **🎧 Auto-Advance:** Plays through your entire folder or filtered search results automatically.
-- **🛡️ Robust & Stable:** Built with `blessed` to handle terminal quirks and resizing gracefully.
+- **🛡️ Robust & Stable:** Built with `blessed` to handle terminal quirks and resizing gracefully, and logs errors instead of crashing mid-song.
 
 ## 🚀 Installation (Automated)
 
@@ -27,6 +29,7 @@ chmod +x install.sh
 2. Install **System Packages:** `mpv`, `python`.
 3. Install **Python Libraries:** `blessed`.
 4. Set up the `mplay` **terminal shortcut/alias**.
+5. Check whether Termux's volume keys are set up to reach mpv (see [Volume Control](#-volume-control) below).
 
 ### 🎨 Nerd Fonts
 To see the icons correctly, ensure you have a [Nerd Font](https://www.nerdfonts.com/) installed in your terminal emulator (like Termux-Styling).
@@ -69,10 +72,39 @@ mplay ~/storage/shared/Music/
 
 #### 🎵 Player Mode (Listening)
 - **SPACE**: Toggle Play/Pause
-- **N**: Next track
-- **P**: Previous track
+- **N**: Tap = Next track · Double-tap (within 0.5s) = Fast-forward 5s in current track
+- **P**: Tap = Previous track · Double-tap (within 0.5s) = Rewind 10s in current track
+- **+ / -**: Volume up / down
 - **S**: Stop playback
 - **Q**: Quit Application
+
+> **Note on N/P timing:** a terminal only sees key presses, never releases, so the only way to
+> tell "one tap" from "two taps" apart is to briefly wait after the first press to see if a
+> second one follows. That means a single N/P tap now skips the track after a short pause (up
+> to ~0.5 seconds) instead of instantly. If a second matching tap lands within that half-second,
+> the skip is cancelled and it seeks within the currently playing track instead.
+
+## 🔊 Volume Control
+
+mplay adjusts mpv's own volume with `+` / `-` while a track is playing — this always works,
+regardless of device or keyboard.
+
+The Android hardware volume rocker normally also works, since it controls the system media
+stream mpv is playing through. If it doesn't, it's because Termux has been configured to use
+the volume keys for its own "special keys" row instead of passing them through as normal
+volume control. `install.sh` checks this automatically and will tell you if that's the case.
+To fix it manually:
+1. Open `~/.termux/termux.properties`
+2. Remove or comment out any `volume-keys = special-keys` line
+3. Run `termux-reload-settings`
+
+## 🛠️ Troubleshooting
+
+mplay no longer crashes the terminal on errors (missing mpv, a dropped playback socket, a
+resize glitch, etc.) — it logs them instead and keeps running. If something looks off, check:
+```bash
+cat ~/.cache/mplay/mplay.log
+```
 
 ## 🛠️ Technical Specs
 - **Backend Player:** `mpv` (System Package)
