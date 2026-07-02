@@ -103,6 +103,41 @@ def ipc_socket_path() -> str:
     tmp_dir = f"{prefix}/tmp" if prefix else tempfile.gettempdir()
     return os.path.join(tmp_dir, f"mplay_{os.getpid()}.sock")
 
+def pulse_sink_ready() -> bool:
+    """True if PulseAudio is reachable AND has a real (non-dummy) sink — not just
+    running with nothing but the fallback auto_null sink, which produces no sound."""
+    if not shutil.which("pactl"):
+        return False
+    try:
+        r = subprocess.run(["pactl", "list", "sinks", "short"], capture_output=True,
+                            text=True, timeout=1.5)
+        if r.returncode != 0:
+            return False
+        return any(line and "auto_null" not in line for line in r.stdout.strip().splitlines())
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+
+def ensure_pulse_ready(timeout: float = 4.0) -> bool:
+    """Make sure PulseAudio is running with a working sink, starting it automatically if
+    needed. Never raises — returns False if pulseaudio isn't installed or the device's
+    audio backend won't cooperate, so callers can fall back to normal playback."""
+    if pulse_sink_ready():
+        return True
+    if not shutil.which("pulseaudio"):
+        return False
+    try:
+        subprocess.Popen(["pulseaudio", "--start", "--exit-idle-time=-1"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as e:
+        log.warning(f"couldn't launch pulseaudio: {e}")
+        return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if pulse_sink_ready():
+            return True
+        time.sleep(0.2)
+    return False
+
 # ── player ────────────────────────────────────────────────────────────────────
 class Player:
     def __init__(self):
@@ -114,6 +149,7 @@ class Player:
         self.paused:     bool = False
         self.volume:     float = 100.0
         self.ipc_path:   str = ipc_socket_path()
+        self.using_pulse: bool = False
         self._tick_stop = threading.Event()
         self.last_error: str | None = None
         self._error_until: float = 0.0
@@ -176,21 +212,30 @@ class Player:
             return
         self._kill()
         self.idx = idx; self.track = track; self.elapsed = 0.0; self.duration = 0.0; self.paused = False
+        # checked fresh every track (not cached from startup) — pulseaudio's sink can finish
+        # initializing after the startup check gave up, or can die mid-session; either way
+        # we always try current reality and fall back to normal output if it's not ready
+        use_pulse = pulse_sink_ready()
+        self.using_pulse = use_pulse
         try:
             os.makedirs(os.path.dirname(self.ipc_path), exist_ok=True)
-            self.proc = subprocess.Popen(
-                ["mpv", "--no-video", "--really-quiet",
-                 f"--volume={int(self.volume)}",
-                 f"--input-ipc-server={self.ipc_path}", str(track)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            mpv_args = ["mpv", "--no-video", "--really-quiet",
+                        f"--volume={int(self.volume)}",
+                        f"--input-ipc-server={self.ipc_path}"]
+            if use_pulse:
+                mpv_args.append("--ao=pulse")
+            mpv_args.append(str(track))
+            self.proc = subprocess.Popen(mpv_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._tick_stop.clear()
             threading.Thread(target=self._tick, daemon=True).start()
         except FileNotFoundError:
             self._set_error(f"{I_WARN} mpv not found — run install.sh", ttl=6.0)
             self.idx = None
+            self.using_pulse = False
         except OSError as e:
             self._set_error(f"{I_WARN} couldn't start mpv: {e}", ttl=6.0)
             self.idx = None
+            self.using_pulse = False
 
     def _tick(self):
         while not self._tick_stop.is_set():
@@ -233,7 +278,10 @@ def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory, sear
     display_dir = str(path_obj).replace(home, "~", 1) if str(path_obj).startswith(home) else str(path_obj)
 
     # Title
-    out.append(term.move_y(0) + term.center(term.bold_blue(f"{I_MUSIC}  M P L A Y")))
+    title = f"{I_MUSIC}  M P L A Y"
+    if player.using_pulse:
+        title += term.cyan("  [pulse]")
+    out.append(term.move_y(0) + term.center(term.bold_blue(title)))
 
     # Search
     search_bar = f" {I_SEARCH} Search: {search_query}"
@@ -346,6 +394,13 @@ def main():
         current_dir = str(target_dir) if target_dir.is_dir() else str(Path.home())
     else:
         current_dir = str(Path.home())
+
+    # kick off pulseaudio early so it has a head start initializing its sink before the
+    # first track plays — but the actual routing decision happens fresh per-track in
+    # Player.play(), so a slow/failed warm-up here doesn't lock the whole session out
+    print(f"{I_MUSIC} starting mplay...", end="", flush=True)
+    ensure_pulse_ready()
+    print("\r" + " " * 30 + "\r", end="", flush=True)
 
     player = Player()
     sel_idx, offset, search_query = 0, 0, ""
