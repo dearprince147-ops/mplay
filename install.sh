@@ -35,7 +35,7 @@ show_progress() {
 }
 
 # 1. Update and install system packages
-echo -e "${BOLD}[1/4] Installing System Packages (mpv, python)...${NC}"
+echo -e "${BOLD}[1/5] Installing System Packages (mpv, python)...${NC}"
 pkg update -y && pkg install -y mpv python ffmpeg-python
 if ! command -v mpv >/dev/null 2>&1; then
     echo -e "${RED}✗ mpv failed to install. mplay needs mpv to play anything.${NC}"
@@ -45,7 +45,7 @@ fi
 show_progress 1 "System updates and core packages..."
 
 # 2. Install Python libraries
-echo -e "${BOLD}[2/4] Installing Python Libraries (blessed)...${NC}"
+echo -e "${BOLD}[2/5] Installing Python Libraries (blessed)...${NC}"
 pip install blessed
 if ! python3 -c "import blessed" >/dev/null 2>&1; then
     echo -e "${RED}✗ the 'blessed' Python library failed to install.${NC}"
@@ -55,7 +55,7 @@ fi
 show_progress 1 "Python dependencies..."
 
 # 3. Setting up Alias
-echo -e "${BOLD}[3/4] Setting up 'mplay' alias...${NC}"
+echo -e "${BOLD}[3/5] Setting up 'mplay' alias...${NC}"
 SCRIPT_PATH=$(realpath mplay.py)
 
 # Detect Shell and apply alias
@@ -72,7 +72,7 @@ show_progress 0.5 "Configuration and shortcuts..."
 # 4. Check Termux volume-key behaviour
 # mplay controls mpv's software volume with +/- inside the app, but the physical
 # volume rocker only reaches mpv if Termux hasn't repurposed it for special keys.
-echo -e "${BOLD}[4/4] Checking Termux volume key behavior...${NC}"
+echo -e "${BOLD}[4/5] Checking Termux volume key behavior...${NC}"
 PROP_FILE="$HOME/.termux/termux.properties"
 if [ -f "$PROP_FILE" ] && grep -qE '^[[:space:]]*volume-keys[[:space:]]*=[[:space:]]*special-keys' "$PROP_FILE"; then
     echo -e "${RED}⚠ Your Termux volume keys are set to 'special-keys' mode.${NC}"
@@ -84,6 +84,38 @@ else
     echo -e "${GREEN}✓ Volume keys look normal — the hardware rocker should control mpv's volume.${NC}"
     echo -e "  You can also use ${CYAN}+${NC} / ${CYAN}-${NC} inside mplay for volume control."
 fi
+
+# 5. PulseAudio + cava (optional — mplay works fine without this, it just enables
+# routing audio through pulse so a `cava` session can visualize it)
+echo -e "${BOLD}[5/5] Setting up audio visualizer support (pulseaudio, cava)...${NC}"
+pkg install -y pulseaudio cava
+if command -v pulseaudio >/dev/null 2>&1 && command -v cava >/dev/null 2>&1; then
+    pulseaudio --start --exit-idle-time=-1 >/dev/null 2>&1
+    sleep 2
+    SINK_NAME=$(pactl list sinks short 2>/dev/null | awk '$2 != "auto_null" {print $2; exit}')
+    mkdir -p ~/.config/cava
+    if [ -n "$SINK_NAME" ] && [ ! -f ~/.config/cava/config ]; then
+        cat > ~/.config/cava/config <<EOF
+[input]
+method = pulse
+source = ${SINK_NAME}.monitor
+EOF
+        echo -e "${GREEN}✓ cava configured automatically to visualize ${SINK_NAME}.${NC}"
+    elif [ -f ~/.config/cava/config ]; then
+        echo -e "${GREEN}✓ cava already has a config — leaving it as-is.${NC}"
+    else
+        echo -e "${YELLOW}⚠ Couldn't detect a real audio sink yet (normal on a first-ever install).${NC}"
+        echo -e "  Run mplay once, play any track, then in another session run:"
+        echo -e "  ${CYAN}pactl list sinks short${NC} — note the sink name, then edit"
+        echo -e "  ${CYAN}~/.config/cava/config${NC} and set: source = <sink-name>.monitor"
+    fi
+    echo -e "${GREEN}✓ pulseaudio + cava installed. mplay routes audio through pulse automatically —${NC}"
+    echo -e "  just run ${CYAN}mplay${NC} normally, then ${CYAN}cava${NC} in a second Termux session to visualize.${NC}"
+else
+    echo -e "${YELLOW}⚠ pulseaudio/cava couldn't be installed — mplay still works completely fine,${NC}"
+    echo -e "  it'll just use normal audio output without visualizer support.${NC}"
+fi
+show_progress 0.5 "Visualizer support..."
 
 echo -e "${GREEN}${BOLD}✨ ALL DEPENDENCIES INSTALLED SUCCESSFULLY!${NC}"
 echo -e "----------------------------------------------------"
