@@ -8,6 +8,7 @@ usage: python mplay.py [directory]
 import sys, subprocess, threading, time, json, socket, os, shutil, logging, tempfile
 from pathlib import Path
 from blessed import Terminal
+import wcwidth
 
 # ── Logging (silent unless something breaks) ───────────────────────────────────
 LOG_DIR = Path.home() / ".cache" / "mplay"
@@ -50,6 +51,31 @@ EXT_ICON = {
 AUDIO = set(EXT_ICON.keys())
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+def vwidth(s: str) -> int:
+    """Display width of a string in terminal columns — unlike len(), this accounts
+    for wide characters (emoji, some CJK) taking 2 columns and combining marks taking 0."""
+    total = 0
+    for ch in s:
+        w = wcwidth.wcwidth(ch)
+        total += w if w and w > 0 else 0
+    return total
+
+def vtruncate(s: str, max_w: int) -> str:
+    """Truncate to a max *display* width, never cutting a wide character in half."""
+    out, total = [], 0
+    for ch in s:
+        w = wcwidth.wcwidth(ch)
+        w = w if w and w > 0 else 0
+        if total + w > max_w:
+            break
+        out.append(ch)
+        total += w
+    return "".join(out)
+
+def vljust(s: str, width: int) -> str:
+    """Like str.ljust, but pads based on display width instead of character count."""
+    return s + " " * max(0, width - vwidth(s))
+
 def ftime(s: float) -> str:
     if s <= 0: return "--:--"
     m, s = divmod(int(s), 60)
@@ -212,7 +238,7 @@ def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory):
     # Search
     search_bar = f" {I_SEARCH} Search: {search_query}"
     if not search_query: search_bar += term.gray(" (type to search)")
-    out.append(term.move(2, 2) + term.bold_cyan(search_bar[:w-4]))
+    out.append(term.move(2, 2) + term.bold_cyan(vtruncate(search_bar, w-4)))
 
     # Sub-header
     music_files = [t for t in tracks if t.is_file()]
@@ -239,7 +265,7 @@ def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory):
 
             prefix = f"{I_PAUSE if (is_playing and player.paused) else (I_PLAY if is_playing else ' ')} "
             line = f"{prefix}{abs_i+1:>3} {icon} {name}"
-            line = line[:w-6].ljust(w-4)
+            line = vljust(vtruncate(line, w-6), w-4)
 
             if is_sel:
                 out.append(term.move(5 + i, 2) + term.on_blue(term.white(line)))
@@ -262,7 +288,7 @@ def draw_ui(term, tracks, player, sel_idx, search_query, offset, directory):
         bar_w = max(10, w - 24 - len(vol_str))
         filled = int(bar_w * ratio)
         status = I_PAUSE if player.paused else I_PLAY
-        out.append(term.move(np_y, 2) + term.bold_blue(f"{status} {track.stem[:w-10]}"))
+        out.append(term.move(np_y, 2) + term.bold_blue(f"{status} {vtruncate(track.stem, w-10)}"))
         bar = term.blue("█" * filled) + term.gray("░" * (bar_w - filled))
         out.append(term.move(np_y + 1, 2) + f"  {ftime(el)} {bar} {ftime(dur)}{term.cyan(vol_str)}")
 
