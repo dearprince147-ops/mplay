@@ -101,6 +101,39 @@ To fix it manually:
 2. Remove or comment out any `volume-keys = special-keys` line
 3. Run `termux-reload-settings`
 
+## 🎨 Audio Visualizer (cava)
+
+mplay automatically routes audio through PulseAudio on every launch — starting it itself if
+it isn't already running — so a separate `cava` session can visualize whatever's playing. No
+flags, no manual `pulseaudio --start`, nothing to remember. This also makes it work cleanly
+from a Termux:Widget shortcut, since there's no interactive step required.
+
+**One-time setup** (just installs the pieces and configures `cava` — mplay handles the rest
+automatically from then on):
+```bash
+pkg install pulseaudio cava
+```
+Edit `~/.config/cava/config`:
+```ini
+[input]
+method = pulse
+source = OpenSL_ES_sink.monitor
+```
+(Run `pactl list sinks short` after launching mplay once if your sink name differs from
+`OpenSL_ES_sink` — swap it into the `source` line above.)
+
+**Every session**, just launch mplay as usual:
+```bash
+mplay
+```
+A `[pulse]` tag appears in the title bar if it connected successfully. In a second Termux
+session, run `cava` while a track is playing.
+
+If PulseAudio or the device's audio backend won't cooperate (varies by Android version/OEM),
+mplay quietly falls back to its normal audio output instead of going silent — you'll just
+lose the visualizer, not your music. Check `~/.cache/mplay/mplay.log` if the `[pulse]` tag
+never appears.
+
 ## 🛠️ Troubleshooting
 
 mplay no longer crashes the terminal on errors (missing mpv, a dropped playback socket, a
